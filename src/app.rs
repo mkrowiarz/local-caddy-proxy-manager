@@ -292,7 +292,10 @@ impl App {
                 self.form.focused_field = self.form.focused_field.saturating_sub(1);
             }
             AppAction::FormConfirm => {
-                let _ = self.save_proxy().await;
+                if let Err(e) = self.save_proxy().await {
+                    self.status_message = Some(format!("Error: {}", e));
+                }
+                self.close_modal();
             }
             AppAction::FormCharInput(c) => match self.form.focused_field {
                 0 => self.form.domain.push(c),
@@ -409,16 +412,11 @@ impl App {
 
         // Apply with compose up
         if self.docker_client.is_some() {
-            crate::docker::compose::compose_up(
-                &file,
-                &crate::docker::client::RuntimeType::Docker,
-            )
-            .await?;
+            crate::docker::compose::compose_up(&file, &self.runtime).await?;
         }
 
-        self.close_modal();
         self.refresh().await?;
-        self.status_message = Some(format!("Proxy added: {}", config.domain));
+        self.status_message = Some(format!("Proxy saved: {}", config.domain));
         Ok(())
     }
 
