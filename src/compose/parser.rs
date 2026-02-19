@@ -4,6 +4,9 @@ use std::path::Path;
 
 use crate::model::{ComposeFile, ContainerStatus, ProxyConfig, Service, ServiceSource};
 
+/// Name of the LCP override file written alongside user compose files.
+pub const LCP_FILENAME: &str = "compose.lcp.yaml";
+
 /// Parse a compose YAML file into a ComposeFile struct.
 pub fn parse_compose_file(path: &Path) -> Result<ComposeFile> {
     let content =
@@ -145,4 +148,33 @@ fn parse_port_from_reverse_proxy(value: &str) -> Option<u16> {
     }
 
     trimmed.parse::<u16>().ok()
+}
+
+/// Merge proxy configs from `compose.lcp.yaml` files into already-discovered services.
+/// For each compose file directory, checks for a sibling `compose.lcp.yaml` and parses
+/// caddy labels from it, updating matching services.
+pub fn merge_lcp_configs(services: &mut [Service], compose_files: &[std::path::PathBuf]) {
+    // Collect unique directories from compose files
+    let mut dirs_seen = std::collections::HashSet::new();
+    for file in compose_files {
+        if let Some(dir) = file.parent() {
+            if !dirs_seen.insert(dir.to_path_buf()) {
+                continue;
+            }
+            let lcp_path = dir.join(LCP_FILENAME);
+            if let Ok(lcp_compose) = parse_compose_file(&lcp_path) {
+                for (svc_name, svc) in &lcp_compose.services {
+                    let labels = svc.labels.to_map();
+                    if let Some(proxy) = parse_caddy_labels(&labels) {
+                        // Find matching service and set its proxy config
+                        for service in services.iter_mut() {
+                            if service.name == *svc_name && service.proxy.is_none() {
+                                service.proxy = Some(proxy.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

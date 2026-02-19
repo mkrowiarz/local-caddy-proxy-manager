@@ -1,105 +1,95 @@
 use anyhow::{Context, Result};
+use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::model::{ComposeFile, ComposeLabels, ComposeNetwork, ComposeService, ProxyConfig};
+use crate::model::ProxyConfig;
 
-/// Add or update caddy labels on a service in a compose file.
-/// Also ensures the caddy external network is present.
-pub fn add_caddy_labels(
-    compose: &mut ComposeFile,
-    service_name: &str,
-    config: &ProxyConfig,
-) -> Result<()> {
-    // Get or create the service
-    let service = compose
-        .services
-        .entry(service_name.to_string())
-        .or_default();
+/// Write or update a `compose.lcp.yaml` file with caddy proxy config for a service.
+/// Preserves previously added services in the file.
+pub fn write_lcp_file(lcp_file_path: &Path, service_name: &str, config: &ProxyConfig) -> Result<()> {
+    // Read existing file if present, to preserve other services
+    let mut doc: BTreeMap<String, serde_yaml_ng::Value> = if lcp_file_path.exists() {
+        let content = std::fs::read_to_string(lcp_file_path)
+            .with_context(|| format!("Failed to read {}", lcp_file_path.display()))?;
+        serde_yaml_ng::from_str(&content).unwrap_or_default()
+    } else {
+        BTreeMap::new()
+    };
 
-    // Convert existing labels to a map and add caddy labels
-    let mut map = service.labels.to_map();
-    map.insert("caddy".to_string(), config.domain.clone());
-    map.insert(
-        "caddy.reverse_proxy".to_string(),
-        format!("{{{{upstreams {}}}}}", config.port),
+    // Build the service entry
+    let mut labels = serde_yaml_ng::Mapping::new();
+    labels.insert(
+        serde_yaml_ng::Value::String("caddy".to_string()),
+        serde_yaml_ng::Value::String(config.domain.clone()),
     );
-    map.insert("caddy.tls".to_string(), config.tls.clone());
-    service.labels = ComposeLabels::Map(map);
-
-    // Add "caddy" to the service's networks
-    add_caddy_network_to_service(service);
-
-    // Add "caddy" to top-level networks as external
-    compose.networks.insert(
-        "caddy".to_string(),
-        Some(ComposeNetwork {
-            external: Some(true),
-            name: None,
-        }),
+    labels.insert(
+        serde_yaml_ng::Value::String("caddy.reverse_proxy".to_string()),
+        serde_yaml_ng::Value::String(format!("{{{{upstreams {}}}}}", config.port)),
+    );
+    labels.insert(
+        serde_yaml_ng::Value::String("caddy.tls".to_string()),
+        serde_yaml_ng::Value::String(config.tls.clone()),
     );
 
-    Ok(())
-}
+    let mut service_map = serde_yaml_ng::Mapping::new();
+    service_map.insert(
+        serde_yaml_ng::Value::String("labels".to_string()),
+        serde_yaml_ng::Value::Mapping(labels),
+    );
+    service_map.insert(
+        serde_yaml_ng::Value::String("networks".to_string()),
+        serde_yaml_ng::Value::Sequence(vec![serde_yaml_ng::Value::String("caddy".to_string())]),
+    );
 
-/// Add "caddy" to a service's networks field.
-fn add_caddy_network_to_service(service: &mut ComposeService) {
-    let caddy_str = serde_yaml_ng::Value::String("caddy".to_string());
+    // Get or create the services mapping
+    let services = doc
+        .entry("services".to_string())
+        .or_insert_with(|| serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::new()));
 
-    match &service.networks {
-        None => {
-            service.networks = Some(serde_yaml_ng::Value::Sequence(vec![caddy_str]));
-        }
-        Some(serde_yaml_ng::Value::Sequence(seq)) => {
-            let has_caddy = seq.iter().any(|v| {
-                matches!(v, serde_yaml_ng::Value::String(s) if s == "caddy")
-            });
-            if !has_caddy {
-                let mut new_seq = seq.clone();
-                new_seq.push(caddy_str);
-                service.networks = Some(serde_yaml_ng::Value::Sequence(new_seq));
-            }
-        }
-        Some(serde_yaml_ng::Value::Mapping(mapping)) => {
-            let key = serde_yaml_ng::Value::String("caddy".to_string());
-            if !mapping.contains_key(&key) {
-                let mut new_mapping = mapping.clone();
-                new_mapping.insert(key, serde_yaml_ng::Value::Null);
-                service.networks = Some(serde_yaml_ng::Value::Mapping(new_mapping));
-            }
-        }
-        Some(_) => {
-            // Unexpected type; replace with a list containing caddy
-            service.networks = Some(serde_yaml_ng::Value::Sequence(vec![caddy_str]));
-        }
+    if let serde_yaml_ng::Value::Mapping(ref mut m) = services {
+        m.insert(
+            serde_yaml_ng::Value::String(service_name.to_string()),
+            serde_yaml_ng::Value::Mapping(service_map),
+        );
     }
-}
 
-/// Write a ComposeFile to disk as YAML.
-pub fn write_compose_file(compose: &ComposeFile, path: &Path) -> Result<()> {
-    let yaml = serde_yaml_ng::to_string(compose)
-        .context("Failed to serialize compose file to YAML")?;
-    std::fs::write(path, yaml)
-        .with_context(|| format!("Failed to write compose file to {}", path.display()))?;
+    // Add top-level networks with caddy external
+    let mut caddy_net = serde_yaml_ng::Mapping::new();
+    caddy_net.insert(
+        serde_yaml_ng::Value::String("external".to_string()),
+        serde_yaml_ng::Value::Bool(true),
+    );
+    let mut networks = serde_yaml_ng::Mapping::new();
+    networks.insert(
+        serde_yaml_ng::Value::String("caddy".to_string()),
+        serde_yaml_ng::Value::Mapping(caddy_net),
+    );
+    doc.insert("networks".to_string(), serde_yaml_ng::Value::Mapping(networks));
+
+    let yaml = serde_yaml_ng::to_string(&doc)
+        .context("Failed to serialize compose.lcp.yaml")?;
+    std::fs::write(lcp_file_path, yaml)
+        .with_context(|| format!("Failed to write {}", lcp_file_path.display()))?;
+
     Ok(())
 }
 
-/// Generate a YAML preview string showing what will be added to the compose file.
+/// Generate a YAML preview showing what compose.lcp.yaml will contain for this service.
 pub fn generate_preview(service_name: &str, config: &ProxyConfig) -> String {
     format!(
-        r#"# Labels to add to service '{}':
-labels:
-  caddy: {}
-  caddy.reverse_proxy: "{{{{upstreams {}}}}}"
-  caddy.tls: {}
+        r#"# compose.lcp.yaml
+services:
+  {}:
+    labels:
+      caddy: {}
+      caddy.reverse_proxy: "{{{{upstreams {}}}}}"
+      caddy.tls: {}
+    networks:
+      - caddy
 
-# Network to add (top-level):
 networks:
   caddy:
-    external: true
-
-# Network reference to add to service:
-networks:
-  - caddy"#,
+    external: true"#,
         service_name, config.domain, config.port, config.tls
     )
 }

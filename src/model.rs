@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -81,8 +81,9 @@ impl Default for FormState {
     }
 }
 
-// Serde structs for compose YAML parsing
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+// Serde structs for compose YAML parsing (fields may appear unused but are needed for deserialization)
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ComposeFile {
     pub name: Option<String>,
     #[serde(default)]
@@ -91,7 +92,8 @@ pub struct ComposeFile {
     pub networks: HashMap<String, Option<ComposeNetwork>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ComposeService {
     #[serde(default)]
     pub labels: ComposeLabels,
@@ -101,11 +103,9 @@ pub struct ComposeService {
     pub expose: Vec<serde_yaml_ng::Value>,
     #[serde(default)]
     pub networks: Option<serde_yaml_ng::Value>,
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_yaml_ng::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(untagged)]
 pub enum ComposeLabels {
     #[default]
@@ -132,9 +132,9 @@ impl ComposeLabels {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ComposeNetwork {
     pub external: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }

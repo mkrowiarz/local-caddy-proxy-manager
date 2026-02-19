@@ -17,7 +17,7 @@ pub fn find_compose_files(dir: &Path) -> Result<Vec<PathBuf>> {
         "**/docker-compose*.yaml",
     ];
 
-    let excluded = ["prod", "staging", "production"];
+    let excluded = ["prod", "staging", "production", ".lcp."];
 
     let mut found = BTreeSet::new();
 

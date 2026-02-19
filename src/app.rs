@@ -6,6 +6,7 @@ use crate::model::{
     ActiveModal, CaddyControlMethod, CaddyProxyStatus, FormState, ProxyConfig, Service,
     ServiceSource, View,
 };
+use crate::compose::parser::LCP_FILENAME;
 
 pub enum AppAction {
     Quit,
@@ -90,6 +91,9 @@ impl App {
                 }
             }
         }
+
+        // 3b. Merge proxy configs from compose.lcp.yaml files
+        crate::compose::parser::merge_lcp_configs(&mut services, &compose_files);
 
         // 4. Merge runtime status
         if let Some(ref docker) = docker_client {
@@ -362,6 +366,7 @@ impl App {
                 }
             }
         }
+        crate::compose::parser::merge_lcp_configs(&mut self.services, &self.compose_files);
         if let Some(ref docker) = self.docker_client {
             let _ = crate::docker::containers::merge_runtime_status(
                 docker,
@@ -402,21 +407,24 @@ impl App {
             return Ok(());
         };
 
-        let file = file.clone();
+        let compose_dir = file.parent().unwrap_or(file.as_path()).to_path_buf();
+        let lcp_path = compose_dir.join(LCP_FILENAME);
+        let compose_filename = file.file_name().unwrap_or_default().to_string_lossy().into_owned();
         let service_name = service_name.clone();
 
-        // Parse, modify, write
-        let mut compose = crate::compose::parser::parse_compose_file(&file)?;
-        crate::compose::writer::add_caddy_labels(&mut compose, &service_name, &config)?;
-        crate::compose::writer::write_compose_file(&compose, &file)?;
-
-        // Apply with compose up
-        if self.docker_client.is_some() {
-            crate::docker::compose::compose_up(&file, &self.runtime).await?;
-        }
+        // Write compose.lcp.yaml (preserves other services already in the file)
+        crate::compose::writer::write_lcp_file(&lcp_path, &service_name, &config)?;
 
         self.refresh().await?;
-        self.status_message = Some(format!("Proxy saved: {}", config.domain));
+
+        let runtime_cmd = match self.runtime {
+            crate::docker::client::RuntimeType::Podman => "podman",
+            crate::docker::client::RuntimeType::Docker => "docker",
+        };
+        self.status_message = Some(format!(
+            "Saved {} — run: {} compose -f {} -f {} up -d",
+            LCP_FILENAME, runtime_cmd, compose_filename, LCP_FILENAME
+        ));
         Ok(())
     }
 
