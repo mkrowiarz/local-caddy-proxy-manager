@@ -57,8 +57,6 @@ pub async fn list_caddy_services(docker: &Docker) -> Result<Vec<Service>> {
             source: ServiceSource::Runtime,
             project,
             available_ports,
-            container_id: container.id,
-            labels,
         });
     }
 

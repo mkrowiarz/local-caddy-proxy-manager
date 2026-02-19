@@ -45,6 +45,7 @@ pub struct App {
     pub caddy_selected: usize,
     pub compose_files: Vec<PathBuf>,
     pub docker_client: Option<bollard::Docker>,
+    pub runtime: crate::docker::client::RuntimeType,
     pub has_project: bool,
     pub active_domains: Vec<String>,
     pub status_message: Option<String>,
@@ -54,7 +55,7 @@ impl App {
     pub async fn new() -> Result<Self> {
         // 1. Connect to docker (may fail gracefully)
         let docker_client_result = crate::docker::client::connect().await;
-        let (docker_client, caddy_status, caddy_control, global_services) =
+        let (docker_client, runtime, caddy_status, caddy_control, global_services) =
             match docker_client_result {
                 Ok(client) => {
                     let caddy_status =
@@ -67,9 +68,9 @@ impl App {
                         crate::docker::containers::list_caddy_services(&client.docker)
                             .await
                             .unwrap_or_default();
-                    (Some(client.docker), caddy_status, caddy_control, global)
+                    (Some(client.docker), client.runtime, caddy_status, caddy_control, global)
                 }
-                Err(_) => (None, CaddyProxyStatus::Unknown, None, vec![]),
+                Err(_) => (None, crate::docker::client::RuntimeType::Docker, CaddyProxyStatus::Unknown, None, vec![]),
             };
 
         // 2. Discover compose files in cwd
@@ -119,6 +120,7 @@ impl App {
             caddy_selected: 0,
             compose_files,
             docker_client,
+            runtime,
             has_project,
             active_domains,
             status_message: None,
@@ -425,20 +427,18 @@ impl App {
             .caddy_control
             .clone()
             .unwrap_or(CaddyControlMethod::Container);
-        let runtime = crate::docker::client::RuntimeType::Docker;
-
         if let Some(ref docker) = self.docker_client {
             match action {
                 "start" => {
-                    crate::docker::containers::start_caddy(docker, &method, &runtime)
+                    crate::docker::containers::start_caddy(docker, &method, &self.runtime)
                         .await?
                 }
                 "stop" => {
-                    crate::docker::containers::stop_caddy(docker, &method, &runtime)
+                    crate::docker::containers::stop_caddy(docker, &method, &self.runtime)
                         .await?
                 }
                 "restart" => {
-                    crate::docker::containers::restart_caddy(docker, &method, &runtime)
+                    crate::docker::containers::restart_caddy(docker, &method, &self.runtime)
                         .await?
                 }
                 _ => {}
@@ -548,10 +548,6 @@ impl App {
             .iter()
             .filter(|s| s.proxy.is_none())
             .collect()
-    }
-
-    pub fn current_selected_service(&self) -> Option<&Service> {
-        self.all_services().get(self.selected)
     }
 
     pub fn close_modal(&mut self) {

@@ -47,8 +47,6 @@ pub fn extract_services(
             },
             project: project_name.clone(),
             available_ports,
-            container_id: None,
-            labels,
         });
     }
 

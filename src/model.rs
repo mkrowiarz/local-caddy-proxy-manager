@@ -30,8 +30,6 @@ pub struct Service {
     pub source: ServiceSource,
     pub project: String,
     pub available_ports: Vec<u16>,
-    pub container_id: Option<String>,
-    pub labels: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

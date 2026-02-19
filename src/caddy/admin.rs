@@ -31,23 +31,6 @@ pub async fn get_active_domains() -> Result<Vec<String>> {
     Ok(domains)
 }
 
-/// Check if the Caddy admin API is reachable at localhost:2019.
-pub async fn is_reachable() -> bool {
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    client
-        .get(format!("{}/config/", CADDY_ADMIN_URL))
-        .send()
-        .await
-        .is_ok_and(|r| r.status().is_success())
-}
-
 /// Recursively extract hostnames from "host" arrays in match blocks.
 fn extract_hosts(value: &serde_json::Value, out: &mut Vec<String>) {
     match value {

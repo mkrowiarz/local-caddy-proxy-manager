@@ -10,7 +10,6 @@ pub enum RuntimeType {
 pub struct DockerClient {
     pub docker: Docker,
     pub runtime: RuntimeType,
-    pub socket_path: String,
 }
 
 /// Auto-detect Docker/Podman socket and connect via bollard.
@@ -22,7 +21,6 @@ pub async fn connect() -> Result<DockerClient> {
             return Ok(DockerClient {
                 docker,
                 runtime: RuntimeType::Docker,
-                socket_path: std::env::var("DOCKER_HOST").unwrap_or_default(),
             });
         }
     }
@@ -46,7 +44,6 @@ pub async fn connect() -> Result<DockerClient> {
                 return Ok(DockerClient {
                     docker,
                     runtime: RuntimeType::Podman,
-                    socket_path: podman_sock,
                 });
             }
         }
@@ -61,7 +58,6 @@ pub async fn connect() -> Result<DockerClient> {
             return Ok(DockerClient {
                 docker,
                 runtime: RuntimeType::Docker,
-                socket_path: docker_sock.to_string(),
             });
         }
     }
@@ -73,7 +69,6 @@ pub async fn connect() -> Result<DockerClient> {
     Ok(DockerClient {
         docker,
         runtime: RuntimeType::Docker,
-        socket_path: docker_sock.to_string(),
     })
 }
 
