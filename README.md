@@ -17,14 +17,14 @@ ports:
 ## Install
 
 ```sh
-git clone git@github.com:mkrowiarz/lpr.git
-cd lpr
+git clone git@github.com:mkrowiarz/local-caddy-proxy-manager.git
+cd local-caddy-proxy-manager
 cargo install --path .
 ```
 
 Or directly:
 ```sh
-cargo install --git git@github.com:mkrowiarz/lpr.git
+cargo install --git git@github.com:mkrowiarz/local-caddy-proxy-manager.git
 ```
 
 ## Usage
